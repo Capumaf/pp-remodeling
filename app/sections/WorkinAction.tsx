@@ -1,14 +1,7 @@
 "use client";
 
-import {
-  useEffect,
-  useState,
-  useCallback,
-  useRef,
-  TouchEvent,
-  KeyboardEvent as ReactKeyboardEvent,
-} from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { SectionReveal } from "../components/anim";
 
 type Slide =
@@ -21,11 +14,6 @@ type WorkItem = {
   slides: Slide[];
 };
 
-type OpenMedia = {
-  cardIdx: number;
-  slideIdx: number;
-} | null;
-
 const items: WorkItem[] = [
   {
     title: "Modern Bathroom Remodel",
@@ -37,16 +25,15 @@ const items: WorkItem[] = [
         alt: "Bathroom after remodel",
       },
       {
+        kind: "image",
+        src: "/portfolio/bathroom-thumb1.jpg",
+        alt: "Alternative bathroom view",
+      },
+      {
         kind: "video",
         src: "/videos/bathroom-before-after-web.mp4",
         poster: "/portfolio/bathroom-thumb.jpg",
         alt: "Bathroom remodel video",
-      },
-
-      {
-      kind: "image",
-      src: "/portfolio/bathroom-thumb1.jpg",
-      alt: "Bathroom remodel alternate angle",
       },
     ],
   },
@@ -59,14 +46,11 @@ const items: WorkItem[] = [
         src: "/portfolio/Flooring-thumb.jpg",
         alt: "Hardwood flooring being installed",
       },
-
       {
-      kind: "image",
-      src: "/portfolio/Flooring-thumb1.jpg", 
-      // o usa el nombre REAL: "/portfolio/Flooring-thumb1.jpg.jpeg"
-      alt: "Hardwood flooring in blue room",
+        kind: "image",
+        src: "/portfolio/Flooring-thumb1.jpg",
+        alt: "Finished hardwood flooring",
       },
-
     ],
   },
   {
@@ -76,114 +60,98 @@ const items: WorkItem[] = [
       {
         kind: "image",
         src: "/portfolio/Deck1.jpg",
-        alt: "Finished custom deck",
+        alt: "Finished deck",
       },
       {
         kind: "image",
         src: "/portfolio/Deck2.jpg",
-        alt: "Deck construction in progress",
+        alt: "Deck build in progress",
       },
     ],
   },
 ];
 
-const SWIPE_THRESHOLD = 50; // px to change slide
-const DRAG_CLOSE_THRESHOLD = 120; // px to close modal
-const MIN_ZOOM = 1;
-const MAX_ZOOM = 3;
+// Para pinch-to-zoom solo necesitamos estos campos
+type SimpleTouch = { clientX: number; clientY: number };
 
-// Helper to compute distance between two touches
-function distance(t1: Touch, t2: Touch): number {
-  const dx = t2.clientX - t1.clientX;
-  const dy = t2.clientY - t1.clientY;
-  return Math.sqrt(dx * dx + dy * dy);
-}
+const distance = (a: SimpleTouch, b: SimpleTouch) => {
+  const dx = a.clientX - b.clientX;
+  const dy = a.clientY - b.clientY;
+  return Math.hypot(dx, dy);
+};
+
+const clamp = (v: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, v));
 
 export default function WorkInAction() {
-  const [indexes, setIndexes] = useState<number[]>(() => items.map(() => 0));
-  const [openMedia, setOpenMedia] = useState<OpenMedia>(null);
+  // Índice de slide por tarjeta
+  const [indexes, setIndexes] = useState<number[]>(() =>
+    items.map(() => 0)
+  );
 
-  // swipe left/right in modal
-  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  // Modal abierto: qué item y qué slide
+  const [open, setOpen] = useState<{
+    itemIndex: number;
+    slideIndex: number;
+  } | null>(null);
 
-  // pinch-to-zoom state for image inside modal
+  // Zoom y gesto
   const [zoomScale, setZoomScale] = useState(1);
   const pinchState = useRef<{ baseDistance: number; baseScale: number } | null>(
     null
   );
+  const dragStartY = useRef<number | null>(null);
+  const dragDeltaY = useRef(0);
 
-  const modalRef = useRef<HTMLDivElement | null>(null);
+  // Cerrar con ESC
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(null);
+      if (!open) return;
 
-  // Card carousel navigation
-  const gotoCardSlide = useCallback((cardIdx: number, dir: 1 | -1) => {
+      if (e.key === "ArrowRight") goModal(1);
+      if (e.key === "ArrowLeft") goModal(-1);
+    };
+    if (open) window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [open]);
+
+  const gotoCardSlide = (cardIdx: number, dir: 1 | -1) => {
     setIndexes((prev) => {
       const next = [...prev];
       const len = items[cardIdx].slides.length;
       next[cardIdx] = (next[cardIdx] + dir + len) % len;
       return next;
     });
-  }, []);
+  };
 
-  // Modal navigation within current project
-  const gotoModalSlide = useCallback((dir: 1 | -1) => {
-    setOpenMedia((current) => {
-      if (!current) return current;
-      const len = items[current.cardIdx].slides.length;
-      return {
-        ...current,
-        slideIdx: (current.slideIdx + dir + len) % len,
-      };
-    });
-  }, []);
+  const openModal = (cardIdx: number, slideIdx: number) => {
+    setZoomScale(1);
+    pinchState.current = null;
+    dragStartY.current = null;
+    dragDeltaY.current = 0;
+    setOpen({ itemIndex: cardIdx, slideIndex: slideIdx });
+  };
 
-  // ESC / Arrow keys in modal
-  useEffect(() => {
-    if (!openMedia) return;
+  const closeModal = () => {
+    setOpen(null);
+  };
 
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setOpenMedia(null);
-      } else if (e.key === "ArrowRight") {
-        gotoModalSlide(1);
-      } else if (e.key === "ArrowLeft") {
-        gotoModalSlide(-1);
-      }
-    };
+  const goModal = (dir: 1 | -1) => {
+    if (!open) return;
+    const item = items[open.itemIndex];
+    const len = item.slides.length;
+    const nextIndex = (open.slideIndex + dir + len) % len;
+    setZoomScale(1);
+    pinchState.current = null;
+    setOpen({ ...open, slideIndex: nextIndex });
+  };
 
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [openMedia, gotoModalSlide]);
-
-  // Touch handlers for swipe in modal (only when not zooming)
-  const handleModalTouchStart = (e: TouchEvent<HTMLDivElement>) => {
-    if (zoomScale !== 1) return; // don’t swipe when zoomed
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     if (e.touches.length === 1) {
-      setTouchStartX(e.touches[0].clientX);
+      dragStartY.current = e.touches[0].clientY;
+      dragDeltaY.current = 0;
     }
-  };
-
-  const handleModalTouchEnd = (e: TouchEvent<HTMLDivElement>) => {
-    if (zoomScale !== 1) return;
-    if (touchStartX == null) return;
-    const diff = e.changedTouches[0].clientX - touchStartX;
-    if (Math.abs(diff) > SWIPE_THRESHOLD) {
-      gotoModalSlide(diff > 0 ? -1 : 1);
-    }
-    setTouchStartX(null);
-  };
-
-  const handleModalKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "ArrowRight") {
-      gotoModalSlide(1);
-    } else if (e.key === "ArrowLeft") {
-      gotoModalSlide(-1);
-    } else if (e.key === "Escape") {
-      setOpenMedia(null);
-    }
-  };
-
-  // Pinch-to-zoom handlers (on image only)
-  const handleImageTouchStart = (e: TouchEvent<HTMLDivElement>) => {
     if (e.touches.length === 2) {
       e.stopPropagation();
       const d = distance(e.touches[0], e.touches[1]);
@@ -191,40 +159,70 @@ export default function WorkInAction() {
     }
   };
 
-  const handleImageTouchMove = (e: TouchEvent<HTMLDivElement>) => {
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 1 && dragStartY.current != null) {
+      const currentY = e.touches[0].clientY;
+      dragDeltaY.current = currentY - dragStartY.current;
+    }
+
     if (e.touches.length === 2 && pinchState.current) {
+      e.preventDefault();
       e.stopPropagation();
       const d = distance(e.touches[0], e.touches[1]);
-      const factor = d / pinchState.current.baseDistance;
-      const nextScale = Math.min(
-        MAX_ZOOM,
-        Math.max(MIN_ZOOM, pinchState.current.baseScale * factor)
-      );
-      setZoomScale(nextScale);
+      const { baseDistance, baseScale } = pinchState.current;
+      if (baseDistance > 0) {
+        const scale = clamp((d / baseDistance) * baseScale, 1, 4);
+        setZoomScale(scale);
+      }
     }
   };
 
-  const handleImageTouchEnd = (e: TouchEvent<HTMLDivElement>) => {
-    if (pinchState.current && e.touches.length < 2) {
+  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 0) {
+      // Drag to close
+      if (Math.abs(dragDeltaY.current) > 120 && zoomScale <= 1.05) {
+        closeModal();
+      }
+      dragStartY.current = null;
+      dragDeltaY.current = 0;
       pinchState.current = null;
-      if (zoomScale < 1.05) setZoomScale(1);
     }
   };
 
-  // Reset zoom when changing slide / closing
-  useEffect(() => {
-    setZoomScale(1);
-    pinchState.current = null;
-  }, [openMedia?.cardIdx, openMedia?.slideIdx]);
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    dragStartY.current = e.clientY;
+    dragDeltaY.current = 0;
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (dragStartY.current != null) {
+      dragDeltaY.current = e.clientY - dragStartY.current;
+    }
+  };
+
+  const handleMouseUp = () => {
+    if (Math.abs(dragDeltaY.current) > 120 && zoomScale <= 1.05) {
+      closeModal();
+    }
+    dragStartY.current = null;
+    dragDeltaY.current = 0;
+  };
+
+  const currentItem = open ? items[open.itemIndex] : null;
+  const currentSlide =
+    open && currentItem ? currentItem.slides[open.slideIndex] : null;
 
   return (
     <SectionReveal>
-      <section id="work" className="py-20 sm:py-24 md:py-28 bg-gray-50">
+      <section
+        id="work"
+        className="py-20 sm:py-24 md:py-28 bg-gray-50 scroll-mt-20"
+      >
         <div className="max-w-6xl mx-auto px-4 sm:px-6 text-center">
           <motion.h2
             initial={{ opacity: 0, y: 18 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: false, amount: 0.2 }}
+            viewport={{ once: true, amount: 0.2 }}
             className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900"
           >
             Work in Action
@@ -233,13 +231,12 @@ export default function WorkInAction() {
           <motion.p
             initial={{ opacity: 0, y: 10 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: false, amount: 0.2 }}
+            viewport={{ once: true, amount: 0.2 }}
             className="mt-4 text-base sm:text-lg md:text-xl text-gray-600"
           >
-            Photos &amp; short videos from recent projects across Maryland.
+            Photos & short videos from recent projects across Maryland.
           </motion.p>
 
-          {/* Cards grid */}
           <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
             {items.map((item, cardIdx) => {
               const slide = item.slides[indexes[cardIdx]];
@@ -250,12 +247,11 @@ export default function WorkInAction() {
                   key={item.title}
                   initial={{ opacity: 0, y: 28 }}
                   whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: false, amount: 0.2 }}
+                  viewport={{ once: true, amount: 0.2 }}
                   transition={{ duration: 0.45, delay: cardIdx * 0.08 }}
-                  className="group text-left rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-lg transition-shadow"
+                  className="group text-left rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md"
                 >
-                  {/* Media frame */}
-                  <div className="relative w-full overflow-hidden">
+                  <div className="relative w-full">
                     <div className="w-full" style={{ paddingTop: "56.25%" }} />
 
                     <div className="absolute inset-0 overflow-hidden">
@@ -264,93 +260,69 @@ export default function WorkInAction() {
                         <img
                           src={slide.src}
                           alt={slide.alt}
-                          className="w-full h-full object-cover transform transition-transform duration-300 ease-out group-hover:scale-105"
+                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                           loading="lazy"
                         />
                       ) : (
                         <video
-                          className="w-full h-full object-cover transform transition-transform duration-300 ease-out group-hover:scale-105"
+                          src={slide.src}
+                          poster={slide.poster}
+                          className="w-full h-full object-cover"
                           muted
                           playsInline
                           preload="metadata"
-                          poster={slide.poster}
-                        >
-                          <source src={slide.src} type="video/mp4" />
-                          Your browser does not support the video tag.
-                        </video>
+                        />
                       )}
                     </div>
 
-                    {/* Card arrows */}
-                    {item.slides.length > 1 && (
-                      <>
-                        <button
-                          type="button"
-                          aria-label="Previous media"
-                          onClick={() => gotoCardSlide(cardIdx, -1)}
-                          className="absolute left-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow-md text-gray-900 text-lg hover:bg-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-700"
-                        >
-                          ‹
-                        </button>
-                        <button
-                          type="button"
-                          aria-label="Next media"
-                          onClick={() => gotoCardSlide(cardIdx, 1)}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow-md text-gray-900 text-lg hover:bg-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-700"
-                        >
-                          ›
-                        </button>
-                      </>
-                    )}
-
-                    {/* Play / View overlay button */}
+                    {/* Flechas card */}
                     <button
                       type="button"
-                      onClick={() =>
-                        setOpenMedia({ cardIdx, slideIdx: indexes[cardIdx] })
-                    }
-                      className="absolute bottom-3 right-3 rounded-full bg-white/90 px-3 py-1.5 text-xs sm:text-sm font-medium text-gray-900 shadow-md hover:bg-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-700"
+                      aria-label="Previous media"
+                      onClick={() => gotoCardSlide(cardIdx, -1)}
+                      className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 shadow hover:bg-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-700"
                     >
-                      {isVideo ? "Play video" : "View photo"}
+                      ‹
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Next media"
+                      onClick={() => gotoCardSlide(cardIdx, +1)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 shadow hover:bg-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-700"
+                    >
+                      ›
                     </button>
 
-                    {/* Slide dots */}
-                    {item.slides.length > 1 && (
-                      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
-                        {item.slides.map((_, dotIdx) => (
-                          <button
-                            key={dotIdx}
-                            type="button"
-                            onClick={() =>
-                              setIndexes((prev) => {
-                                const next = [...prev];
-                                next[cardIdx] = dotIdx;
-                                return next;
-                              })
-                            }
-                            aria-label={`Show slide ${
-                              dotIdx + 1
-                            } of ${item.slides.length}`}
-                            className={`h-2.5 w-2.5 rounded-full border border-white/80 ${
-                              dotIdx === indexes[cardIdx]
-                                ? "bg-green-700"
-                                : "bg-white/70"
-                            } shadow`}
-                          />
-                        ))}
-                      </div>
-                    )}
+                    {/* Botón View / Play */}
+                    <button
+                      type="button"
+                      onClick={() => openModal(cardIdx, indexes[cardIdx])}
+                      className="absolute bottom-3 right-3 rounded-md bg-white/90 px-3 py-1.5 text-sm font-medium text-gray-900 shadow hover:bg-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-700"
+                    >
+                      {isVideo ? "Play" : "View"}
+                    </button>
+
+                    {/* Dots */}
+                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+                      {item.slides.map((_, dotIdx) => (
+                        <span
+                          key={dotIdx}
+                          className={`h-2 w-2 rounded-full ${
+                            dotIdx === indexes[cardIdx]
+                              ? "bg-green-700"
+                              : "bg-white/80"
+                          } shadow`}
+                        />
+                      ))}
+                    </div>
                   </div>
 
-                  {/* Card text */}
                   <div className="p-4 border-t">
                     <h3 className="text-base sm:text-lg font-semibold text-gray-900">
                       {item.title}
                     </h3>
                     {item.location && (
-                      <p className="mt-1 text-sm text-gray-500">
-                        {item.location}
-                      </p>
+                      <p className="text-sm text-gray-500">{item.location}</p>
                     )}
                   </div>
                 </motion.div>
@@ -359,198 +331,95 @@ export default function WorkInAction() {
           </div>
 
           {/* MODAL */}
-          <AnimatePresence>
-            {openMedia && (
-              <motion.div
-                className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setOpenMedia(null)}
-                role="dialog"
-                aria-modal="true"
+          {open && currentItem && currentSlide && (
+            <div
+              className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+              onClick={closeModal}
+              role="dialog"
+              aria-modal="true"
+            >
+              <div
+                className="relative w-full max-w-5xl max-h-[90vh] bg-black/90 rounded-xl overflow-hidden flex items-center justify-center"
+                onClick={(e) => e.stopPropagation()}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
               >
-                <motion.div
-                  ref={modalRef}
-                  className="relative w-full max-w-4xl max-h-[90vh] bg-neutral-900/90 rounded-2xl shadow-2xl flex flex-col"
-                  initial={{ y: 20, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  exit={{ y: 10, opacity: 0 }}
-                  onClick={(e) => e.stopPropagation()}
-                  onTouchStart={handleModalTouchStart}
-                  onTouchEnd={handleModalTouchEnd}
-                  onKeyDown={handleModalKeyDown}
-                  tabIndex={0}
-                  drag="y"
-                  dragConstraints={{ top: 0, bottom: 0 }}
-                  dragElastic={0.2}
-                  onDragEnd={(_, info) => {
-                    if (
-                      Math.abs(info.offset.y) > DRAG_CLOSE_THRESHOLD ||
-                      Math.abs(info.velocity.y) > 800
-                    ) {
-                      setOpenMedia(null);
-                    }
+                {/* Contenido con zoom */}
+                <div
+                  className="relative w-full h-full flex items-center justify-center"
+                  style={{
+                    touchAction: "none",
                   }}
                 >
-                  {/* Modal header */}
-                  <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-white/10 text-left">
-                    <div>
-                      <p className="text-sm font-semibold text-white">
-                        {items[openMedia.cardIdx].title}
-                      </p>
-                      {items[openMedia.cardIdx].location && (
-                        <p className="text-xs text-gray-300">
-                          {items[openMedia.cardIdx].location}
-                        </p>
-                      )}
-                    </div>
+                  {currentSlide.kind === "image" ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={currentSlide.src}
+                      alt={currentSlide.alt}
+                      className="max-h-[90vh] max-w-full object-contain select-none"
+                      style={{
+                        transform: `scale(${zoomScale})`,
+                        transition: zoomScale === 1 ? "transform 0.2s" : "none",
+                      }}
+                      draggable={false}
+                    />
+                  ) : (
+                    <video
+                      src={currentSlide.src}
+                      poster={currentSlide.poster}
+                      className="max-h-[90vh] max-w-full"
+                      autoPlay
+                      controls
+                      playsInline
+                      muted
+                      controlsList="nodownload noremoteplayback"
+                      disablePictureInPicture
+                      style={{
+                        transform: `scale(${zoomScale})`,
+                        transition: zoomScale === 1 ? "transform 0.2s" : "none",
+                      }}
+                    />
+                  )}
+                </div>
+
+                {/* Flechas modal */}
+                {currentItem.slides.length > 1 && (
+                  <>
                     <button
                       type="button"
-                      className="rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-gray-900 shadow hover:bg-white focus:outline-none focus:ring-2 focus:ring-green-600"
-                      onClick={() => setOpenMedia(null)}
+                      aria-label="Previous media"
+                      onClick={() => goModal(-1)}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 shadow hover:bg-white"
                     >
-                      Close
+                      ‹
                     </button>
-                  </div>
+                    <button
+                      type="button"
+                      aria-label="Next media"
+                      onClick={() => goModal(1)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 shadow hover:bg-white"
+                    >
+                      ›
+                    </button>
+                  </>
+                )}
 
-                  {/* Media area */}
-                  <div className="relative flex-1 flex items-center justify-center px-3 sm:px-6 py-4">
-                    <AnimatePresence mode="wait">
-                      {(() => {
-                        const slide =
-                          items[openMedia.cardIdx].slides[
-                            openMedia.slideIdx
-                          ];
-
-                        if (slide.kind === "video") {
-                          return (
-                            <motion.video
-                              key={`video-${openMedia.cardIdx}-${openMedia.slideIdx}`}
-                              controls
-                              autoPlay
-                              muted
-                              playsInline
-                              className="w-full max-h-[70vh] rounded-xl shadow-xl bg-black"
-                              controlsList="nodownload noplaybackrate"
-                              disablePictureInPicture
-                              onContextMenu={(e) => e.preventDefault()}
-                              initial={{ opacity: 0, scale: 0.98 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.98 }}
-                              transition={{ duration: 0.2 }}
-                            >
-                              <source src={slide.src} type="video/mp4" />
-                              Your browser does not support the video tag.
-                            </motion.video>
-                          );
-                        }
-
-                        // Image with pinch-to-zoom
-                        return (
-                          <motion.div
-                            key={`image-${openMedia.cardIdx}-${openMedia.slideIdx}`}
-                            className="w-full max-h-[70vh] flex items-center justify-center"
-                            initial={{ opacity: 0, scale: 0.98 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.98 }}
-                            transition={{ duration: 0.2 }}
-                            onTouchStart={handleImageTouchStart}
-                            onTouchMove={handleImageTouchMove}
-                            onTouchEnd={handleImageTouchEnd}
-                          >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={slide.src}
-                              alt={slide.alt}
-                              className="max-h-[70vh] max-w-full object-contain rounded-xl shadow-xl bg-black select-none"
-                              style={{
-                                transform: `scale(${zoomScale})`,
-                                transformOrigin: "center center",
-                                transition:
-                                  pinchState.current === null
-                                    ? "transform 0.2s ease-out"
-                                    : "none",
-                              }}
-                              draggable={false}
-                            />
-                          </motion.div>
-                        );
-                      })()}
-                    </AnimatePresence>
-
-                    {/* Modal arrows */}
-                    {items[openMedia.cardIdx].slides.length > 1 && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => gotoModalSlide(-1)}
-                          aria-label="Previous media"
-                          className="absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-gray-900 text-lg shadow-lg hover:bg-white focus:outline-none focus:ring-2 focus:ring-green-600"
-                        >
-                          ‹
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => gotoModalSlide(1)}
-                          aria-label="Next media"
-                          className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-gray-900 text-lg shadow-lg hover:bg-white focus:outline-none focus:ring-2 focus:ring-green-600"
-                        >
-                          ›
-                        </button>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Thumbnails row */}
-                  {items[openMedia.cardIdx].slides.length > 1 && (
-                    <div className="px-3 sm:px-6 pb-4">
-                      <div className="flex items-center justify-center gap-2 overflow-x-auto">
-                        {items[openMedia.cardIdx].slides.map(
-                          (thumb, thumbIdx) => {
-                            const isActive =
-                              thumbIdx === openMedia.slideIdx;
-
-                            return (
-                              <button
-                                key={thumbIdx}
-                                type="button"
-                                onClick={() =>
-                                  setOpenMedia({
-                                    ...openMedia,
-                                    slideIdx: thumbIdx,
-                                  })
-                                }
-                                className={`relative flex-shrink-0 h-14 w-14 rounded-lg overflow-hidden border ${
-                                  isActive
-                                    ? "border-green-500 shadow-md"
-                                    : "border-white/20 opacity-80 hover:opacity-100"
-                                }`}
-                                aria-label={`Open slide ${thumbIdx + 1}`}
-                              >
-                                {thumb.kind === "image" ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={thumb.src}
-                                    alt={thumb.alt}
-                                    className="h-full w-full object-cover"
-                                  />
-                                ) : (
-                                  <div className="h-full w-full bg-black flex items-center justify-center text-white text-xs">
-                                    ▶
-                                  </div>
-                                )}
-                              </button>
-                            );
-                          }
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                {/* Cerrar */}
+                <button
+                  type="button"
+                  className="absolute top-4 right-4 rounded-md bg-white/90 px-3 py-1.5 text-sm font-medium text-gray-900 shadow hover:bg-white"
+                  onClick={closeModal}
+                  aria-label="Close viewer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </section>
     </SectionReveal>
