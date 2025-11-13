@@ -1,26 +1,132 @@
+/* ✅ 1. Import Nunito Sans from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700&display=swap');
+
+/* ✅ 2. Import Tailwind */
 @import "tailwindcss";
 
+/* -------------------------------------------
+   🎨 Global Theme Variables
+-------------------------------------------- */
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #000000;
 }
 
+/* ✅ Use Nunito Sans globally */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: 'Nunito Sans', Arial, Helvetica, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* -------------------------------------------
+   🌍 Base Global Styles
+-------------------------------------------- */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  line-height: 1.6;
+}
+
+/* ✅ Disable CSS smooth scroll for natural behavior */
+html {
+  scroll-behavior: auto; /* IMPORTANT: prevents Lenis or browser smooth scroll interference */
+}
+
+/* ✅ Ensure anchored sections scroll correctly below fixed header */
+section[id] {
+  scroll-margin-top: 6rem; /* adjust this value if your header height changes */
+}
+
+/* ✅ Smooth transitions on buttons and links */
+button,
+a {
+  transition: all 0.2s ease-in-out;
+}
+
+/* -------------------------------------------
+   🏠 Animated House Component Styles
+   (Slow, elegant animation)
+-------------------------------------------- */
+
+/* Outline drawing */
+.ah-draw {
+  stroke-dasharray: 1200;
+  stroke-dashoffset: 1200;
+  animation: ah-draw 3s ease-in-out forwards;
+}
+
+/* Sequential delay */
+.ah-delay {
+  animation-delay: 1.2s;
+}
+
+/* Door rises */
+.ah-slide-up {
+  transform: translateY(14px);
+  opacity: 0;
+  animation: ah-up 2s 1s ease-in-out forwards;
+}
+
+/* Tools/details slide in from right */
+.ah-slide-right {
+  transform: translateX(10px);
+  opacity: 0;
+  animation: ah-right 2.5s 1.5s ease-in-out forwards;
+}
+
+/* Windows fade in softly */
+.ah-fade {
+  opacity: 0;
+  animation: ah-fade 2.2s 2.2s ease-in-out forwards;
+}
+
+/* -------------------------------------------
+   ⏱️ Keyframes
+-------------------------------------------- */
+
+/* Main outline */
+@keyframes ah-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Door vertical movement */
+@keyframes ah-up {
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Details horizontal movement */
+@keyframes ah-right {
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Windows gradual appearance */
+@keyframes ah-fade {
+  to {
+    opacity: 1;
+  }
+}
+
+/* -------------------------------------------
+   ♿ Accessibility: Reduced Motion
+-------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .ah-draw,
+  .ah-slide-up,
+  .ah-slide-right,
+  .ah-fade {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+    stroke-dashoffset: 0 !important;
+  }
 }
