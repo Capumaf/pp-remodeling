@@ -15,7 +15,7 @@ export default function Contact() {
           <div className="p-5 sm:p-6 rounded-xl border border-[#E5E7EB] bg-white">
             <h3 className="font-semibold text-[#1F2937] text-lg sm:text-xl mb-4">Get In Touch</h3>
             <p className="mb-3 text-sm sm:text-base"><strong>Phone:</strong> (240) 418-4590</p>
-            <p className="mb-3 text-sm sm:text-base"><strong>Email:</strong> contact@ppremodeling.com</p>
+            <p className="mb-3 text-sm sm:text-base"><strong>Email:</strong> contact@pnp-remodeling.com</p>
             <p className="mb-3 text-sm sm:text-base"><strong>Location:</strong> Serving Maryland and surrounding areas</p>
             <p className="mt-6 text-[#6B7280] text-xs sm:text-sm bg-[#F9FAFB] p-4 rounded">
               We’re available Monday–Friday from 8 AM – 6 PM. Send us a message anytime — we’ll respond within 24 hours.
