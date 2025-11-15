@@ -3,22 +3,22 @@ import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// Email donde tú quieres recibir los mensajes
+const TO_EMAIL = process.env.CONTACT_TO_EMAIL || "pumaangel205@gmail.com";
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { name, email, message } = body;
 
     if (!name || !email || !message) {
-      return NextResponse.json(
-        { ok: false, error: "Missing required fields." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing fields" }, { status: 400 });
     }
 
+    // 🔥 Enviar correo a tu email personal
     const result = await resend.emails.send({
-      from: "P&P Remodeling <contact@pnp-remodeling.com>",
-      to: ["pumaangel205@gmail.com"], // your personal email
-      reply_to: email,
+      from: "P&P Remodeling <contact@pnp-remodeling.com>", // dominio verificado
+      to: [TO_EMAIL],                                      // solo 1 "to" permitido
       subject: `New lead from ${name}`,
       html: `
         <h2>New contact from website</h2>
@@ -29,20 +29,9 @@ export async function POST(req: Request) {
       `,
     });
 
-    if ((result as any)?.error) {
-      console.error("Resend error:", (result as any).error);
-      return NextResponse.json(
-        { ok: false, error: "Failed to send email." },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ ok: true }, { status: 200 });
-  } catch (err: any) {
-    console.error("Route error:", err);
-    return NextResponse.json(
-      { ok: false, error: "Server error." },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: true, result });
+  } catch (error) {
+    console.error("Email error:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
