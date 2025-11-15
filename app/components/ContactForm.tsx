@@ -1,4 +1,5 @@
 "use client";
+
 import { useState } from "react";
 
 const BRAND = "#2E7D32";
@@ -73,6 +74,7 @@ export default function ContactForm() {
           style={{ borderColor: BRAND }}
         />
       </div>
+
       <div>
         <label
           htmlFor="email"
@@ -91,6 +93,7 @@ export default function ContactForm() {
           style={{ borderColor: BRAND }}
         />
       </div>
+
       <div>
         <label
           htmlFor="message"
@@ -109,6 +112,7 @@ export default function ContactForm() {
           style={{ borderColor: BRAND }}
         />
       </div>
+
       <button
         type="submit"
         disabled={loading}
@@ -117,7 +121,8 @@ export default function ContactForm() {
       >
         {loading ? "Sending..." : "Send Message"}
       </button>
-      {note && <p className="text-sm text_gray-700">{note}</p>}
+
+      {note && <p className="text-sm text-gray-700 mt-2">{note}</p>}
     </form>
   );
 }
