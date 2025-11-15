@@ -1,3 +1,4 @@
+// app/components/ContactForm.tsx
 "use client";
 
 import { useState } from "react";
@@ -37,14 +38,24 @@ export default function ContactForm() {
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+        const text = await res.text();
+        console.error("API error response:", text);
+
+        let data: any = {};
+        try {
+          data = JSON.parse(text);
+        } catch {
+          // respuesta no JSON
+        }
+
         throw new Error(data.error || "Something went wrong.");
       }
 
       setNote("Thank you! We’ll get back to you shortly.");
       setForm({ name: "", email: "", message: "" });
     } catch (err: any) {
-      setNote(err.message || "Unexpected error.");
+      console.error("FORM ERROR:", err);
+      setNote(err?.message || "Unexpected error.");
     } finally {
       setLoading(false);
     }
@@ -122,8 +133,7 @@ export default function ContactForm() {
         {loading ? "Sending..." : "Send Message"}
       </button>
 
-      {note && <p className="text-sm text-gray-700 mt-2">{note}</p>}
+      {note && <p className="text-sm mt-2">{note}</p>}
     </form>
   );
 }
- // trigger redeploy
