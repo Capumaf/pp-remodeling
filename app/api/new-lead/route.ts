@@ -1,36 +1,23 @@
-// app/api/new-lead/route.ts
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 
-// Email donde tú quieres recibir los mensajes
+const resend = new Resend(process.env.RESEND_API_KEY);
+
 const TO_EMAIL = process.env.CONTACT_TO_EMAIL || "pumaangel205@gmail.com";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => null);
-
-    const name = body?.name?.trim();
-    const email = body?.email?.trim();
-    const message = body?.message?.trim();
+    const body = await req.json();
+    const { name, email, message } = body;
 
     if (!name || !email || !message) {
-      return NextResponse.json({ error: "Missing fields" }, { status: 400 });
-    }
-
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) {
-      console.error("RESEND_API_KEY is not defined");
       return NextResponse.json(
-        { error: "Email service not configured" },
-        { status: 500 }
+        { error: "Missing fields" },
+        { status: 400 }
       );
     }
 
-    const resend = new Resend(apiKey);
-
-    const { error } = await resend.emails.send({
-      // 👇 usa tu dominio verificado. Si tienes problemas, prueba con:
-      // from: "P&P Remodeling <onboarding@resend.dev>",
+    const result = await resend.emails.send({
       from: "P&P Remodeling <contact@pnp-remodeling.com>",
       to: [TO_EMAIL],
       subject: `New lead from ${name}`,
@@ -43,15 +30,7 @@ export async function POST(req: Request) {
       `,
     });
 
-    if (error) {
-      console.error("Resend send error:", error);
-      return NextResponse.json(
-        { error: "Failed to send email" },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ success: true }, { status: 200 });
+    return NextResponse.json({ success: true, result });
   } catch (error) {
     console.error("Email error:", error);
     return NextResponse.json(
