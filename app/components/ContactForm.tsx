@@ -119,7 +119,8 @@ export default function ContactForm() {
           "Error de red al enviar el formulario. Verifica tu conexión e inténtalo de nuevo.",
       });
     }
-  };
+  };  // cambio prueba
+
 
   return (
     <div className="p-5 sm:p-6 rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
