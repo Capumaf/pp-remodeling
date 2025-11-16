@@ -4,11 +4,17 @@ import { FormEvent, useEffect, useState } from "react";
 import Script from "next/script";
 import { contactSchema } from "../lib/validation/contact";
 
-
 declare global {
   interface Window {
-    onTurnstileSuccess?: (token: string) => void;
+    onTurnstileLoad?: () => void;
     turnstile?: {
+      render: (
+        target: string | HTMLElement,
+        options: {
+          sitekey: string;
+          callback: (token: string) => void;
+        }
+      ) => void;
       reset: () => void;
     };
   }
@@ -25,7 +31,7 @@ type FormState = {
   email: string;
   phone: string;
   message: string;
-  company: string; // honeypot (campo oculto)
+  company: string; // honeypot
 };
 
 const initialFormState: FormState = {
@@ -44,19 +50,26 @@ export default function ContactForm() {
 
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
-  // Callback global que usa el widget de Turnstile
+  // Render explícito de Turnstile cuando el script carga
   useEffect(() => {
-    window.onTurnstileSuccess = (token: string) => {
-      setTurnstileToken(token);
+    if (!siteKey) return;
+
+    window.onTurnstileLoad = () => {
+      if (!window.turnstile) return;
+      window.turnstile.render("#turnstile-widget", {
+        sitekey: siteKey,
+        callback: (token: string) => {
+          setTurnstileToken(token);
+        },
+      });
     };
-  }, []);
+  }, [siteKey]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
-    // limpiar error de ese campo al escribir
     setFieldErrors((prev) => {
       const copy = { ...prev };
       delete copy[name];
@@ -70,7 +83,6 @@ export default function ContactForm() {
     setStatus({ type: "idle" });
     setFieldErrors({});
 
-    // 1) Verificar Turnstile
     if (!turnstileToken) {
       setStatus({
         type: "error",
@@ -79,13 +91,13 @@ export default function ContactForm() {
       return;
     }
 
-    // 2) Validación fuerte con Zod en el frontend
+    // Validación fuerte en frontend
     const raw = {
       name: form.name,
       email: form.email,
       phone: form.phone,
       message: form.message,
-      company: form.company, // honeypot
+      company: form.company,
     };
 
     const parsed = contactSchema.safeParse(raw);
@@ -107,7 +119,6 @@ export default function ContactForm() {
       return;
     }
 
-    // 3) Enviar al backend
     setStatus({ type: "loading" });
 
     try {
@@ -142,11 +153,10 @@ export default function ContactForm() {
       setForm(initialFormState);
       setTurnstileToken(null);
 
-      // Intentar resetear el widget de Turnstile
       try {
         window.turnstile?.reset();
       } catch {
-        // ignorar si no existe
+        // ignorar
       }
     } catch (err) {
       console.error(err);
@@ -160,11 +170,10 @@ export default function ContactForm() {
 
   return (
     <div className="p-5 sm:p-6 rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
-      {/* Script de Turnstile */}
+      {/* Script de Turnstile con onload explícito */}
       <Script
-        src="https://challenges.cloudflare.com/turnstile/v0/api.js"
-        async
-        defer
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad&render=explicit"
+        strategy="afterInteractive"
       />
 
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
@@ -259,7 +268,7 @@ export default function ContactForm() {
           )}
         </div>
 
-        {/* Honeypot oculto para bots */}
+        {/* Honeypot oculto */}
         <input
           type="text"
           name="company"
@@ -270,14 +279,10 @@ export default function ContactForm() {
           autoComplete="off"
         />
 
-        {/* Turnstile Widget */}
+        {/* Turnstile widget renderizado explícitamente */}
         <div className="mt-2">
           {siteKey ? (
-            <div
-              className="cf-turnstile"
-              data-sitekey={siteKey}
-              data-callback="onTurnstileSuccess"
-            />
+            <div id="turnstile-widget" />
           ) : (
             <p className="text-xs text-red-600">
               Falta configurar NEXT_PUBLIC_TURNSTILE_SITE_KEY en Vercel.
