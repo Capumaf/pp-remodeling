@@ -27,12 +27,15 @@ const initialFormState: FormState = {
 export default function ContactForm() {
   const [form, setForm] = useState<FormState>(initialFormState);
   const [status, setStatus] = useState<Status>({ type: "idle" });
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] =
+    useState<Record<string, string>>({});
 
-  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
 
-  // 🔍 LOG 1: ver qué siteKey llega al cliente
-  console.log("Turnstile siteKey (cliente):", siteKey);
+  // Para confirmar que en prod llega la key
+  if (typeof window !== "undefined") {
+    console.log("Turnstile SITE KEY desde el cliente:", siteKey);
+  }
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -58,7 +61,6 @@ export default function ContactForm() {
 
     const turnstileToken = tokenInput?.value || "";
 
-    // 🔍 LOG 2: ver si el input existe y qué valor tiene
     console.log("Turnstile token input:", tokenInput);
     console.log("Turnstile token value:", turnstileToken);
 
@@ -141,6 +143,7 @@ export default function ContactForm() {
 
   return (
     <div className="p-5 sm:p-6 rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
+      {/* Script de Turnstile */}
       <Script
         src="https://challenges.cloudflare.com/turnstile/v0/api.js"
         async
@@ -148,8 +151,106 @@ export default function ContactForm() {
       />
 
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-        {/* ... TODO LO DEMÁS IGUAL ... */}
+        <div>
+          <label
+            htmlFor="name"
+            className="block text-sm font-medium text-[#1F2937] mb-1"
+          >
+            Name *
+          </label>
+          <input
+            id="name"
+            name="name"
+            type="text"
+            autoComplete="name"
+            required
+            value={form.name}
+            onChange={handleChange}
+            className="w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A] focus:border-[#16A34A]"
+            placeholder="John Doe"
+          />
+          {fieldErrors.name && (
+            <p className="mt-1 text-xs text-red-600">
+              {fieldErrors.name}
+            </p>
+          )}
+        </div>
 
+        <div>
+          <label
+            htmlFor="email"
+            className="block text-sm font-medium text-[#1F2937] mb-1"
+          >
+            Email *
+          </label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            required
+            value={form.email}
+            onChange={handleChange}
+            className="w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A] focus:border-[#16A34A]"
+            placeholder="you@example.com"
+          />
+          {fieldErrors.email && (
+            <p className="mt-1 text-xs text-red-600">
+              {fieldErrors.email}
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label
+            htmlFor="phone"
+            className="block text-sm font-medium text-[#1F2937] mb-1"
+          >
+            Phone *
+          </label>
+          <input
+            id="phone"
+            name="phone"
+            type="tel"
+            autoComplete="tel"
+            required
+            value={form.phone}
+            onChange={handleChange}
+            className="w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A] focus:border-[#16A34A]"
+            placeholder="(240) 418-4590"
+          />
+          {fieldErrors.phone && (
+            <p className="mt-1 text-xs text-red-600">
+              {fieldErrors.phone}
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label
+            htmlFor="message"
+            className="block text-sm font-medium text-[#1F2937] mb-1"
+          >
+            Tell us about your project *
+          </label>
+          <textarea
+            id="message"
+            name="message"
+            required
+            value={form.message}
+            onChange={handleChange}
+            rows={5}
+            className="w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A] focus:border-[#16A34A] resize-none"
+            placeholder="What would you like to remodel? Timeline, budget, etc."
+          />
+          {fieldErrors.message && (
+            <p className="mt-1 text-xs text-red-600">
+              {fieldErrors.message}
+            </p>
+          )}
+        </div>
+
+        {/* Turnstile Widget */}
         <div className="mt-2">
           {siteKey ? (
             <div className="cf-turnstile" data-sitekey={siteKey} />
@@ -160,7 +261,28 @@ export default function ContactForm() {
           )}
         </div>
 
-        {/* resto del formulario igual */}
+        <button
+          type="submit"
+          disabled={status.type === "loading"}
+          className="inline-flex items-center justify-center w-full rounded-lg bg-[#16A34A] text-white text-sm font-semibold py-2.5 mt-2 hover:bg-[#15803D] transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+        >
+          {status.type === "loading" ? "Sending..." : "Send Message"}
+        </button>
+
+        {status.type === "error" && (
+          <p className="text-xs text-red-600 mt-2">{status.message}</p>
+        )}
+
+        {status.type === "success" && (
+          <p className="text-xs text-green-600 mt-2">
+            {status.message}
+          </p>
+        )}
+
+        <p className="text-[11px] text-gray-400 mt-2">
+          By submitting this form, you agree to be contacted about your
+          project.
+        </p>
       </form>
     </div>
   );
