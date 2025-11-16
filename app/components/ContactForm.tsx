@@ -15,7 +15,6 @@ type FormState = {
   email: string;
   phone: string;
   message: string;
-  company: string; // honeypot
 };
 
 const initialFormState: FormState = {
@@ -23,7 +22,6 @@ const initialFormState: FormState = {
   email: "",
   phone: "",
   message: "",
-  company: "",
 };
 
 export default function ContactForm() {
@@ -38,6 +36,7 @@ export default function ContactForm() {
   ) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+    // limpiar error de ese campo si ya se está corrigiendo
     setFieldErrors((prev) => {
       const copy = { ...prev };
       delete copy[name];
@@ -51,7 +50,7 @@ export default function ContactForm() {
     setStatus({ type: "idle" });
     setFieldErrors({});
 
-    // 1) Recuperar el token que inserta automáticamente Turnstile
+    // 1) LEER EL TOKEN REAL QUE PONE TURNSTILE EN EL DOM
     const tokenInput = document.querySelector(
       'input[name="cf-turnstile-response"]'
     ) as HTMLInputElement | null;
@@ -66,16 +65,13 @@ export default function ContactForm() {
       return;
     }
 
-    // 2) Validación fuerte en frontend con Zod
-    const raw = {
+    // 2) Validación fuerte en el frontend con Zod
+    const parsed = contactSchema.safeParse({
       name: form.name,
       email: form.email,
       phone: form.phone,
       message: form.message,
-      company: form.company,
-    };
-
-    const parsed = contactSchema.safeParse(raw);
+    });
 
     if (!parsed.success) {
       const newErrors: Record<string, string> = {};
@@ -103,12 +99,17 @@ export default function ContactForm() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          ...raw,
+          ...parsed.data,
           turnstileToken,
         }),
       });
 
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        // puede que no haya body
+      }
 
       if (!res.ok) {
         console.error("Error /api/new-lead:", data);
@@ -138,7 +139,7 @@ export default function ContactForm() {
 
   return (
     <div className="p-5 sm:p-6 rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
-      {/* Script oficial de Turnstile: simple */}
+      {/* Script de Turnstile */}
       <Script
         src="https://challenges.cloudflare.com/turnstile/v0/api.js"
         async
@@ -237,18 +238,7 @@ export default function ContactForm() {
           )}
         </div>
 
-        {/* Honeypot oculto */}
-        <input
-          type="text"
-          name="company"
-          value={form.company}
-          onChange={handleChange}
-          className="hidden"
-          tabIndex={-1}
-          autoComplete="off"
-        />
-
-        {/* Turnstile auto-render (lo que faltaba que funcionara bien) */}
+        {/* Turnstile Widget */}
         <div className="mt-2">
           {siteKey ? (
             <div className="cf-turnstile" data-sitekey={siteKey} />
