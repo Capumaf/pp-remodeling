@@ -27,15 +27,9 @@ const initialFormState: FormState = {
 export default function ContactForm() {
   const [form, setForm] = useState<FormState>(initialFormState);
   const [status, setStatus] = useState<Status>({ type: "idle" });
-  const [fieldErrors, setFieldErrors] =
-    useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
-
-  // Para confirmar que en prod llega la key
-  if (typeof window !== "undefined") {
-    console.log("Turnstile SITE KEY desde el cliente:", siteKey);
-  }
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -55,23 +49,22 @@ export default function ContactForm() {
     setStatus({ type: "idle" });
     setFieldErrors({});
 
+    // Read Turnstile token from hidden input inserted by the widget
     const tokenInput = document.querySelector(
       'input[name="cf-turnstile-response"]'
     ) as HTMLInputElement | null;
 
     const turnstileToken = tokenInput?.value || "";
 
-    console.log("Turnstile token input:", tokenInput);
-    console.log("Turnstile token value:", turnstileToken);
-
     if (!turnstileToken) {
       setStatus({
         type: "error",
-        message: "Por favor completa la verificación anti-bots.",
+        message: "Please complete the bot verification.",
       });
       return;
     }
 
+    // Frontend validation with Zod
     const parsed = contactSchema.safeParse({
       name: form.name,
       email: form.email,
@@ -91,7 +84,7 @@ export default function ContactForm() {
       setFieldErrors(newErrors);
       setStatus({
         type: "error",
-        message: "Por favor revisa los campos marcados.",
+        message: "Please check the highlighted fields.",
       });
       return;
     }
@@ -113,7 +106,9 @@ export default function ContactForm() {
       let data: any = null;
       try {
         data = await res.json();
-      } catch {}
+      } catch {
+        // response may not have a body
+      }
 
       if (!res.ok) {
         console.error("Error /api/new-lead:", data);
@@ -121,14 +116,14 @@ export default function ContactForm() {
           type: "error",
           message:
             data?.error ||
-            "Hubo un problema al enviar el formulario. Inténtalo más tarde.",
+            "There was a problem sending the form. Please try again later.",
         });
         return;
       }
 
       setStatus({
         type: "success",
-        message: "¡Mensaje enviado! Te contactaremos muy pronto.",
+        message: "Message sent! We will contact you shortly.",
       });
       setForm(initialFormState);
     } catch (err) {
@@ -136,14 +131,14 @@ export default function ContactForm() {
       setStatus({
         type: "error",
         message:
-          "Error de red al enviar el formulario. Verifica tu conexión e inténtalo de nuevo.",
+          "Network error while sending the form. Please check your connection and try again.",
       });
     }
   };
 
   return (
     <div className="p-5 sm:p-6 rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
-      {/* Script de Turnstile */}
+      {/* Turnstile script */}
       <Script
         src="https://challenges.cloudflare.com/turnstile/v0/api.js"
         async
@@ -170,9 +165,7 @@ export default function ContactForm() {
             placeholder="John Doe"
           />
           {fieldErrors.name && (
-            <p className="mt-1 text-xs text-red-600">
-              {fieldErrors.name}
-            </p>
+            <p className="mt-1 text-xs text-red-600">{fieldErrors.name}</p>
           )}
         </div>
 
@@ -195,9 +188,7 @@ export default function ContactForm() {
             placeholder="you@example.com"
           />
           {fieldErrors.email && (
-            <p className="mt-1 text-xs text-red-600">
-              {fieldErrors.email}
-            </p>
+            <p className="mt-1 text-xs text-red-600">{fieldErrors.email}</p>
           )}
         </div>
 
@@ -220,9 +211,7 @@ export default function ContactForm() {
             placeholder="(240) 418-4590"
           />
           {fieldErrors.phone && (
-            <p className="mt-1 text-xs text-red-600">
-              {fieldErrors.phone}
-            </p>
+            <p className="mt-1 text-xs text-red-600">{fieldErrors.phone}</p>
           )}
         </div>
 
@@ -253,10 +242,14 @@ export default function ContactForm() {
         {/* Turnstile Widget */}
         <div className="mt-2">
           {siteKey ? (
-            <div className="cf-turnstile" data-sitekey={siteKey} />
+            <div
+              className="cf-turnstile"
+              data-sitekey={siteKey}
+              data-language="en"
+            />
           ) : (
             <p className="text-xs text-red-600">
-              Falta configurar NEXT_PUBLIC_TURNSTILE_SITE_KEY.
+              NEXT_PUBLIC_TURNSTILE_SITE_KEY is not configured.
             </p>
           )}
         </div>
@@ -274,9 +267,7 @@ export default function ContactForm() {
         )}
 
         {status.type === "success" && (
-          <p className="text-xs text-green-600 mt-2">
-            {status.message}
-          </p>
+          <p className="text-xs text-green-600 mt-2">{status.message}</p>
         )}
 
         <p className="text-[11px] text-gray-400 mt-2">
