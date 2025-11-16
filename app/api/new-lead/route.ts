@@ -4,6 +4,7 @@ import { Resend } from "resend";
 import { z } from "zod";
 import { Redis } from "@upstash/redis";
 import { Ratelimit } from "@upstash/ratelimit";
+import { contactSchema, sanitizeText } from "../../lib/validation/contact";
 
 // ---------- Resend ----------
 const resendApiKey = process.env.RESEND_API_KEY;
@@ -19,7 +20,8 @@ const resend = new Resend(resendApiKey);
 
 // ---------- Upstash Rate Limit ----------
 const hasUpstash =
-  !!process.env.UPSTASH_REDIS_REST_URL && !!process.env.UPSTASH_REDIS_REST_TOKEN;
+  !!process.env.UPSTASH_REDIS_REST_URL &&
+  !!process.env.UPSTASH_REDIS_REST_TOKEN;
 
 const redis = hasUpstash
   ? new Redis({
@@ -37,51 +39,7 @@ const ratelimit = redis
     })
   : null;
 
-// ---------- Validación (Zod) ----------
-const leadSchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(1, "El nombre es obligatorio.")
-    .max(100, "El nombre es demasiado largo."),
-  email: z
-    .string()
-    .trim()
-    .email("El correo electrónico no es válido.")
-    .max(254, "El correo electrónico es demasiado largo."),
-  phone: z
-    .string()
-    .trim()
-    .regex(/^[0-9+\-()\s.]{7,20}$/, "El teléfono no es válido."),
-  message: z
-    .string()
-    .trim()
-    .min(10, "El mensaje es demasiado corto.")
-    .max(2000, "El mensaje es demasiado largo."),
-  turnstileToken: z.string().min(1, "Falta la verificación anti-bots."),
-});
-
-// ---------- Sanitización ----------
-function stripHtml(input: string): string {
-  return input.replace(/<\/?[^>]+(>|$)/g, "");
-}
-
-function normalizeWhitespace(input: string): string {
-  return input.replace(/\s+/g, " ").trim();
-}
-
-function sanitizeText(input: string): string {
-  let out = stripHtml(input);
-  out = normalizeWhitespace(out);
-  // elimina caracteres de control raros
-  out = out.replace(/[^\x09\x0A\x0D\x20-\x7EÁÉÍÓÚáéíóúÑñüÜ¿¡]/g, "");
-  return out;
-}
-
-const truncate = (s: string, max: number) =>
-  s.length > max ? s.slice(0, max) : s;
-
-// ---------- Verificación Turnstile ----------
+// ---------- Turnstile ----------
 async function verifyTurnstileToken(token: string, ip: string | null) {
   const secret = process.env.TURNSTILE_SECRET_KEY;
   if (!secret) {
@@ -124,6 +82,11 @@ async function verifyTurnstileToken(token: string, ip: string | null) {
   }
 }
 
+// ---------- Esquema backend (contact + turnstile) ----------
+const leadSchema = contactSchema.extend({
+  turnstileToken: z.string().min(1, "Falta la verificación anti-bots."),
+});
+
 // ---------- Handler principal ----------
 export async function POST(req: NextRequest) {
   try {
@@ -135,11 +98,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ip =
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      // @ts-ignore (Next no tipa ip en Request)
-      req.ip ||
-      "unknown";
+    const ipHeader = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+    // @ts-ignore (Next no tipa ip en Request)
+    const ip = ipHeader || req.ip || "unknown";
 
     // Rate limiting
     if (ratelimit) {
@@ -165,7 +126,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
 
-    // Validación
+    // Validación (frontend + backend usan el mismo esquema base)
     const parsed = leadSchema.safeParse(body);
     if (!parsed.success) {
       const errors = parsed.error.flatten().fieldErrors;
@@ -175,7 +136,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { name, email, phone, message, turnstileToken } = parsed.data;
+    const { name, email, phone, message, company, turnstileToken } =
+      parsed.data;
+
+    // Honeypot (si company trae algo -> bot)
+    if (company && company.trim().length > 0) {
+      return NextResponse.json(
+        { error: "Verificación anti-spam fallida." },
+        { status: 400 }
+      );
+    }
 
     // Verificar Turnstile (anti-bots)
     const isHuman = await verifyTurnstileToken(
@@ -189,11 +159,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Sanitización
+    // Sanitización extra en backend
     const safeName = sanitizeText(name);
     const safeEmail = sanitizeText(email);
     const safePhone = sanitizeText(phone);
     const safeMessage = sanitizeText(message);
+
+    const truncate = (s: string, max: number) =>
+      s.length > max ? s.slice(0, max) : s;
 
     const emailText = [
       "Nueva solicitud desde el formulario de pnp-remodeling.com",

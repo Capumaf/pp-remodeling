@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Script from "next/script";
+import { contactSchema } from "../lib/validation/contact";
+
 
 declare global {
   interface Window {
@@ -18,16 +20,26 @@ type Status =
   | { type: "success"; message: string }
   | { type: "error"; message: string };
 
-const initialFormState = {
+type FormState = {
+  name: string;
+  email: string;
+  phone: string;
+  message: string;
+  company: string; // honeypot (campo oculto)
+};
+
+const initialFormState: FormState = {
   name: "",
   email: "",
   phone: "",
   message: "",
+  company: "",
 };
 
 export default function ContactForm() {
-  const [form, setForm] = useState(initialFormState);
+  const [form, setForm] = useState<FormState>(initialFormState);
   const [status, setStatus] = useState<Status>({ type: "idle" });
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
@@ -44,13 +56,21 @@ export default function ContactForm() {
   ) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+    // limpiar error de ese campo al escribir
+    setFieldErrors((prev) => {
+      const copy = { ...prev };
+      delete copy[name];
+      return copy;
+    });
   };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     setStatus({ type: "idle" });
+    setFieldErrors({});
 
+    // 1) Verificar Turnstile
     if (!turnstileToken) {
       setStatus({
         type: "error",
@@ -59,15 +79,35 @@ export default function ContactForm() {
       return;
     }
 
-    // Validación rápida frontend (la fuerte está en el backend)
-    if (!form.name.trim() || !form.email.trim() || !form.phone.trim()) {
+    // 2) Validación fuerte con Zod en el frontend
+    const raw = {
+      name: form.name,
+      email: form.email,
+      phone: form.phone,
+      message: form.message,
+      company: form.company, // honeypot
+    };
+
+    const parsed = contactSchema.safeParse(raw);
+
+    if (!parsed.success) {
+      const newErrors: Record<string, string> = {};
+      parsed.error.issues.forEach((issue) => {
+        const field = issue.path[0]?.toString() || "form";
+        if (!newErrors[field]) {
+          newErrors[field] = issue.message;
+        }
+      });
+
+      setFieldErrors(newErrors);
       setStatus({
         type: "error",
-        message: "Por favor completa todos los campos obligatorios.",
+        message: "Por favor revisa los campos marcados.",
       });
       return;
     }
 
+    // 3) Enviar al backend
     setStatus({ type: "loading" });
 
     try {
@@ -77,10 +117,7 @@ export default function ContactForm() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          name: form.name,
-          email: form.email,
-          phone: form.phone,
-          message: form.message,
+          ...raw,
           turnstileToken,
         }),
       });
@@ -119,8 +156,7 @@ export default function ContactForm() {
           "Error de red al enviar el formulario. Verifica tu conexión e inténtalo de nuevo.",
       });
     }
-  };  // cambio prueba
-
+  };
 
   return (
     <div className="p-5 sm:p-6 rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
@@ -131,7 +167,7 @@ export default function ContactForm() {
         defer
       />
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         <div>
           <label
             htmlFor="name"
@@ -150,6 +186,9 @@ export default function ContactForm() {
             className="w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A] focus:border-[#16A34A]"
             placeholder="John Doe"
           />
+          {fieldErrors.name && (
+            <p className="mt-1 text-xs text-red-600">{fieldErrors.name}</p>
+          )}
         </div>
 
         <div>
@@ -170,6 +209,9 @@ export default function ContactForm() {
             className="w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A] focus:border-[#16A34A]"
             placeholder="you@example.com"
           />
+          {fieldErrors.email && (
+            <p className="mt-1 text-xs text-red-600">{fieldErrors.email}</p>
+          )}
         </div>
 
         <div>
@@ -190,6 +232,9 @@ export default function ContactForm() {
             className="w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A] focus:border-[#16A34A]"
             placeholder="(240) 418-4590"
           />
+          {fieldErrors.phone && (
+            <p className="mt-1 text-xs text-red-600">{fieldErrors.phone}</p>
+          )}
         </div>
 
         <div>
@@ -209,7 +254,21 @@ export default function ContactForm() {
             className="w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A] focus:border-[#16A34A] resize-none"
             placeholder="What would you like to remodel? Timeline, budget, etc."
           />
+          {fieldErrors.message && (
+            <p className="mt-1 text-xs text-red-600">{fieldErrors.message}</p>
+          )}
         </div>
+
+        {/* Honeypot oculto para bots */}
+        <input
+          type="text"
+          name="company"
+          value={form.company}
+          onChange={handleChange}
+          className="hidden"
+          tabIndex={-1}
+          autoComplete="off"
+        />
 
         {/* Turnstile Widget */}
         <div className="mt-2">
