@@ -1,24 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import Script from "next/script";
 import { contactSchema } from "../lib/validation/contact";
-
-declare global {
-  interface Window {
-    onTurnstileLoad?: () => void;
-    turnstile?: {
-      render: (
-        target: string | HTMLElement,
-        options: {
-          sitekey: string;
-          callback: (token: string) => void;
-        }
-      ) => void;
-      reset: () => void;
-    };
-  }
-}
 
 type Status =
   | { type: "idle" }
@@ -46,24 +30,8 @@ export default function ContactForm() {
   const [form, setForm] = useState<FormState>(initialFormState);
   const [status, setStatus] = useState<Status>({ type: "idle" });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
-
-  // Render explícito de Turnstile cuando el script carga
-  useEffect(() => {
-    if (!siteKey) return;
-
-    window.onTurnstileLoad = () => {
-      if (!window.turnstile) return;
-      window.turnstile.render("#turnstile-widget", {
-        sitekey: siteKey,
-        callback: (token: string) => {
-          setTurnstileToken(token);
-        },
-      });
-    };
-  }, [siteKey]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -83,6 +51,13 @@ export default function ContactForm() {
     setStatus({ type: "idle" });
     setFieldErrors({});
 
+    // 1) Recuperar el token que inserta automáticamente Turnstile
+    const tokenInput = document.querySelector(
+      'input[name="cf-turnstile-response"]'
+    ) as HTMLInputElement | null;
+
+    const turnstileToken = tokenInput?.value || "";
+
     if (!turnstileToken) {
       setStatus({
         type: "error",
@@ -91,7 +66,7 @@ export default function ContactForm() {
       return;
     }
 
-    // Validación fuerte en frontend
+    // 2) Validación fuerte en frontend con Zod
     const raw = {
       name: form.name,
       email: form.email,
@@ -151,13 +126,6 @@ export default function ContactForm() {
         message: "¡Mensaje enviado! Te contactaremos muy pronto.",
       });
       setForm(initialFormState);
-      setTurnstileToken(null);
-
-      try {
-        window.turnstile?.reset();
-      } catch {
-        // ignorar
-      }
     } catch (err) {
       console.error(err);
       setStatus({
@@ -170,10 +138,11 @@ export default function ContactForm() {
 
   return (
     <div className="p-5 sm:p-6 rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
-      {/* Script de Turnstile con onload explícito */}
+      {/* Script oficial de Turnstile: simple */}
       <Script
-        src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad&render=explicit"
-        strategy="afterInteractive"
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+        async
+        defer
       />
 
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
@@ -279,13 +248,13 @@ export default function ContactForm() {
           autoComplete="off"
         />
 
-        {/* Turnstile widget renderizado explícitamente */}
+        {/* Turnstile auto-render (lo que faltaba que funcionara bien) */}
         <div className="mt-2">
           {siteKey ? (
-            <div id="turnstile-widget" />
+            <div className="cf-turnstile" data-sitekey={siteKey} />
           ) : (
             <p className="text-xs text-red-600">
-              Falta configurar NEXT_PUBLIC_TURNSTILE_SITE_KEY en Vercel.
+              Falta configurar NEXT_PUBLIC_TURNSTILE_SITE_KEY.
             </p>
           )}
         </div>
