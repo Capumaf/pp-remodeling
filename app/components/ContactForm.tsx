@@ -1,139 +1,250 @@
-// app/components/ContactForm.tsx
 "use client";
 
-import { useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import Script from "next/script";
 
-const BRAND = "#2E7D32";
+declare global {
+  interface Window {
+    onTurnstileSuccess?: (token: string) => void;
+    turnstile?: {
+      reset: () => void;
+    };
+  }
+}
+
+type Status =
+  | { type: "idle" }
+  | { type: "loading" }
+  | { type: "success"; message: string }
+  | { type: "error"; message: string };
+
+const initialFormState = {
+  name: "",
+  email: "",
+  phone: "",
+  message: "",
+};
 
 export default function ContactForm() {
-  const [form, setForm] = useState({ name: "", email: "", message: "" });
-  const [loading, setLoading] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
+  const [form, setForm] = useState(initialFormState);
+  const [status, setStatus] = useState<Status>({ type: "idle" });
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
-  const onChange = (
+  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+
+  // Callback global que usa el widget de Turnstile
+  useEffect(() => {
+    window.onTurnstileSuccess = (token: string) => {
+      setTurnstileToken(token);
+    };
+  }, []);
+
+  const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) =>
-    setForm((f) => ({
-      ...f,
-      [e.target.name]: e.target.value,
-    }));
+  ) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
 
-  const onSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setNote(null);
 
-    if (!form.name.trim()) return setNote("Please enter your name.");
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
-      return setNote("Enter a valid email.");
-    if (form.message.trim().length < 10)
-      return setNote("Message is too short.");
+    setStatus({ type: "idle" });
 
-    setLoading(true);
+    if (!turnstileToken) {
+      setStatus({
+        type: "error",
+        message: "Por favor completa la verificación anti-bots.",
+      });
+      return;
+    }
+
+    // Validación rápida frontend (la fuerte está en el backend)
+    if (!form.name.trim() || !form.email.trim() || !form.phone.trim()) {
+      setStatus({
+        type: "error",
+        message: "Por favor completa todos los campos obligatorios.",
+      });
+      return;
+    }
+
+    setStatus({ type: "loading" });
 
     try {
       const res = await fetch("/api/new-lead", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+          message: form.message,
+          turnstileToken,
+        }),
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        const text = await res.text();
-        console.error("API error response:", text);
-
-        let data: any = {};
-        try {
-          data = JSON.parse(text);
-        } catch {
-          // respuesta no JSON
-        }
-
-        throw new Error(data.error || "Something went wrong.");
+        console.error("Error /api/new-lead:", data);
+        setStatus({
+          type: "error",
+          message:
+            data?.error ||
+            "Hubo un problema al enviar el formulario. Inténtalo más tarde.",
+        });
+        return;
       }
 
-      setNote("Thank you! We’ll get back to you shortly.");
-      setForm({ name: "", email: "", message: "" });
-    } catch (err: any) {
-      console.error("FORM ERROR:", err);
-      setNote(err?.message || "Unexpected error.");
-    } finally {
-      setLoading(false);
+      setStatus({
+        type: "success",
+        message: "¡Mensaje enviado! Te contactaremos muy pronto.",
+      });
+      setForm(initialFormState);
+      setTurnstileToken(null);
+
+      // Intentar resetear el widget de Turnstile
+      try {
+        window.turnstile?.reset();
+      } catch {
+        // ignorar si no existe
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus({
+        type: "error",
+        message:
+          "Error de red al enviar el formulario. Verifica tu conexión e inténtalo de nuevo.",
+      });
     }
   };
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="space-y-5 rounded-lg border bg-white p-6 shadow-sm"
-      noValidate
-    >
-      <div>
-        <label
-          htmlFor="name"
-          className="block text-sm font-semibold text-gray-700 mb-1"
+    <div className="p-5 sm:p-6 rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
+      {/* Script de Turnstile */}
+      <Script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+        async
+        defer
+      />
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label
+            htmlFor="name"
+            className="block text-sm font-medium text-[#1F2937] mb-1"
+          >
+            Name *
+          </label>
+          <input
+            id="name"
+            name="name"
+            type="text"
+            autoComplete="name"
+            required
+            value={form.name}
+            onChange={handleChange}
+            className="w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A] focus:border-[#16A34A]"
+            placeholder="John Doe"
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="email"
+            className="block text-sm font-medium text-[#1F2937] mb-1"
+          >
+            Email *
+          </label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            required
+            value={form.email}
+            onChange={handleChange}
+            className="w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A] focus:border-[#16A34A]"
+            placeholder="you@example.com"
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="phone"
+            className="block text-sm font-medium text-[#1F2937] mb-1"
+          >
+            Phone *
+          </label>
+          <input
+            id="phone"
+            name="phone"
+            type="tel"
+            autoComplete="tel"
+            required
+            value={form.phone}
+            onChange={handleChange}
+            className="w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A] focus:border-[#16A34A]"
+            placeholder="(240) 418-4590"
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="message"
+            className="block text-sm font-medium text-[#1F2937] mb-1"
+          >
+            Tell us about your project *
+          </label>
+          <textarea
+            id="message"
+            name="message"
+            required
+            value={form.message}
+            onChange={handleChange}
+            rows={5}
+            className="w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#16A34A] focus:border-[#16A34A] resize-none"
+            placeholder="What would you like to remodel? Timeline, budget, etc."
+          />
+        </div>
+
+        {/* Turnstile Widget */}
+        <div className="mt-2">
+          {siteKey ? (
+            <div
+              className="cf-turnstile"
+              data-sitekey={siteKey}
+              data-callback="onTurnstileSuccess"
+            />
+          ) : (
+            <p className="text-xs text-red-600">
+              Falta configurar NEXT_PUBLIC_TURNSTILE_SITE_KEY en Vercel.
+            </p>
+          )}
+        </div>
+
+        <button
+          type="submit"
+          disabled={status.type === "loading"}
+          className="inline-flex items-center justify-center w-full rounded-lg bg-[#16A34A] text-white text-sm font-semibold py-2.5 mt-2 hover:bg-[#15803D] transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
         >
-          Full Name
-        </label>
-        <input
-          id="name"
-          name="name"
-          type="text"
-          required
-          value={form.name}
-          onChange={onChange}
-          className="w-full rounded-md border p-2 focus:outline-none focus:ring-2 focus:ring-[#2E7D32]"
-          style={{ borderColor: BRAND }}
-        />
-      </div>
+          {status.type === "loading" ? "Sending..." : "Send Message"}
+        </button>
 
-      <div>
-        <label
-          htmlFor="email"
-          className="block text-sm font-semibold text-gray-700 mb-1"
-        >
-          Email Address
-        </label>
-        <input
-          id="email"
-          name="email"
-          type="email"
-          required
-          value={form.email}
-          onChange={onChange}
-          className="w-full rounded-md border p-2 focus:outline-none focus:ring-2 focus:ring-[#2E7D32]"
-          style={{ borderColor: BRAND }}
-        />
-      </div>
+        {status.type === "error" && (
+          <p className="text-xs text-red-600 mt-2">{status.message}</p>
+        )}
 
-      <div>
-        <label
-          htmlFor="message"
-          className="block text-sm font-semibold text-gray-700 mb-1"
-        >
-          Message
-        </label>
-        <textarea
-          id="message"
-          name="message"
-          rows={5}
-          required
-          value={form.message}
-          onChange={onChange}
-          className="w-full rounded-md border p-2 focus:outline-none focus:ring-2 focus:ring-[#2E7D32]"
-          style={{ borderColor: BRAND }}
-        />
-      </div>
+        {status.type === "success" && (
+          <p className="text-xs text-green-600 mt-2">{status.message}</p>
+        )}
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="rounded-md px-6 py-2 text-white font-semibold transition disabled:opacity-60"
-        style={{ backgroundColor: BRAND }}
-      >
-        {loading ? "Sending..." : "Send Message"}
-      </button>
-
-      {note && <p className="text-sm mt-2">{note}</p>}
-    </form>
+        <p className="text-[11px] text-gray-400 mt-2">
+          By submitting this form, you agree to be contacted about your project.
+        </p>
+      </form>
+    </div>
   );
 }
